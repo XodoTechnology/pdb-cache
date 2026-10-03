@@ -1,0 +1,18 @@
+services:
+  peeringdb-cache:
+    build: .
+    image: peeringdb-cache:latest
+    container_name: peeringdb-cache
+    restart: unless-stopped
+    volumes:
+      - ./peeringdb-cache:/data
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      - PEERINGDB_API_KEY=${PEERINGDB_API_KEY:-}
+      # - SYNC_INTERVAL=21600        # seconds between syncs (default 6h)
+      # - CHANGE_CHECK_INTERVAL=600  # probe for remote changes every N sec (0=off)
+      # - CHANGE_CHECK_RESOURCES=    # limit probes to these tags (empty=all)
+      # - PDB_SYNC_ONLY=org,net      # limit synced resources (testing)
+      # - PROXY_FIX_COUNT=1          # trust X-Forwarded-For from N proxies
+      # - LOG_LEVEL=INFO
