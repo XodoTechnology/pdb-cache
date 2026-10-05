@@ -47,6 +47,12 @@ Environment variables:
 | --- | --- | --- |
 | `PEERINGDB_API_KEY` | | PeeringDB API key; enables fetching private `poc`/`ixlan` data |
 | `DATABASE_PATH` | `/data/peeringdb.sqlite3` | SQLite database location |
+| `DATABASE_URL` | | Full database URL, e.g. `postgresql://user:pass@host:5432/peeringdb`; overrides the variables below |
+| `DATABASE_ENGINE` | `sqlite3` | `sqlite3`, `postgresql` or `cockroachdb` |
+| `DATABASE_NAME` | `peeringdb` (non-SQLite) | Database name |
+| `DATABASE_HOST` / `DATABASE_PORT` | | Database host and port |
+| `DATABASE_USER` / `DATABASE_PASSWORD` | | Database credentials |
+| `DATABASE_SSLMODE` | | libpq `sslmode` (e.g. `require`); with `DATABASE_URL` use `?sslmode=...` |
 | `SYNC_INTERVAL` | `21600` | Seconds between syncs |
 | `CHANGE_CHECK_INTERVAL` | `600` | Seconds between remote-change probes; `0` disables |
 | `CHANGE_CHECK_RESOURCES` | all synced | Comma-separated resource tags to probe |
@@ -56,6 +62,12 @@ Environment variables:
 | `PEERINGDB_SYNC_TIMEOUT` | `60` | HTTP timeout (seconds) for PeeringDB requests |
 | `PROXY_FIX_COUNT` | `0` | Number of trusted reverse proxies; enables `X-Forwarded-*` handling |
 | `LOG_LEVEL` | `INFO` | Python logging level |
+
+## PostgreSQL
+
+SQLite is the default. To use PostgreSQL instead, create an empty database and set `DATABASE_URL` (or `DATABASE_ENGINE=postgresql` plus the `DATABASE_*` variables). Tables are created by migrations on startup. Preloading with a `.sqlite3` file only applies to SQLite.
+
+PostgreSQL 14 or later is required (Django 5.2). The server's reported version is what counts, so CockroachDB, which reports 13 for wire compatibility, must use the dedicated backend instead: set `DATABASE_URL=cockroachdb://user@host:26257/peeringdb` (or `DATABASE_ENGINE=cockroachdb`) and create the database first.
 
 ## Docker
 

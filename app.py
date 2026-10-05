@@ -3,6 +3,7 @@ import logging
 import os
 import threading
 import time
+from urllib.parse import parse_qsl, unquote, urlparse
 from datetime import datetime, timezone
 
 from django.core import serializers
@@ -35,18 +36,74 @@ CHANGE_CHECK_RESOURCES = [
     t for t in os.environ.get("CHANGE_CHECK_RESOURCES", "").split(",") if t
 ]
 
+
+def database_config():
+    """Build the ORM database config from the environment.
+
+    DATABASE_URL (postgresql:// or cockroachdb://user:pass@host:port/name,
+    with ?sslmode=... style query options) selects the engine; otherwise
+    DATABASE_ENGINE (sqlite3, postgresql or cockroachdb) and the DATABASE_*
+    variables are used, defaulting to SQLite at DATABASE_PATH.
+    """
+    url = os.environ.get("DATABASE_URL", "")
+    if url:
+        u = urlparse(url)
+        scheme = u.scheme.split("+")[0]
+        if scheme in ("postgres", "postgresql"):
+            engine = "postgresql"
+        elif scheme in ("cockroach", "cockroachdb"):
+            engine = "cockroachdb"
+        elif scheme == "sqlite":
+            engine = "sqlite3"
+        else:
+            raise ValueError(f"unsupported DATABASE_URL scheme: {u.scheme}")
+        options = dict(parse_qsl(u.query))
+        if engine == "sqlite3":
+            name = unquote(u.path[1:])
+            name = name or DATABASE_PATH
+            host = user = password = ""
+            port = 0
+        else:
+            name = unquote(u.path.lstrip("/"))
+            host = u.hostname or ""
+            port = u.port or 0
+            user = unquote(u.username or "")
+            password = unquote(u.password or "")
+    else:
+        engine = os.environ.get("DATABASE_ENGINE", "sqlite3").lower()
+        if engine in ("postgres", "postgresql"):
+            engine = "postgresql"
+        elif engine == "cockroach":
+            engine = "cockroachdb"
+        name = os.environ.get(
+            "DATABASE_NAME", DATABASE_PATH if engine == "sqlite3" else "peeringdb"
+        )
+        options = {}
+        if os.environ.get("DATABASE_SSLMODE"):
+            options["sslmode"] = os.environ["DATABASE_SSLMODE"]
+        host = os.environ.get("DATABASE_HOST", "")
+        port = int(os.environ.get("DATABASE_PORT", "0") or 0)
+        user = os.environ.get("DATABASE_USER", "")
+        password = os.environ.get("DATABASE_PASSWORD", "")
+    if engine not in ("sqlite3", "postgresql", "cockroachdb"):
+        raise ValueError(f"unsupported DATABASE_ENGINE: {engine}")
+    return {
+        "engine": engine,
+        "host": host,
+        "name": name,
+        "password": password,
+        "port": port,
+        "user": user,
+        "options": {"timeout": 30} if engine == "sqlite3" else options,
+    }
+
+
+DB_CONFIG = database_config()
+
 PDB_CONFIG = {
     "orm": {
         "backend": "django_peeringdb",
-        "database": {
-            "engine": "sqlite3",
-            "host": "",
-            "name": DATABASE_PATH,
-            "password": "",
-            "port": 0,
-            "user": "",
-            "options": {"timeout": 30},
-        },
+        "database": DB_CONFIG,
         "migrate": True,
         "secret_key": "",
     },
@@ -64,16 +121,41 @@ PDB_CONFIG = {
     },
 }
 
+if DB_CONFIG["engine"] == "cockroachdb":
+    # django_peeringdb always prefixes the engine with "django.db.backends.",
+    # which can't name the third-party django_cockroachdb backend
+    from django_peeringdb.client_adaptor import load as _pdb_load
+
+    _orig_database_settings = _pdb_load.database_settings
+
+    def _database_settings(db_config):
+        cfg = dict(db_config, engine="sqlite3")
+        db = _orig_database_settings(cfg)
+        db["ENGINE"] = "django_cockroachdb"
+        return db
+
+    _pdb_load.database_settings = _database_settings
+
 pdb = Client(cfg=PDB_CONFIG)
 
+if DB_CONFIG["engine"] != "sqlite3":
+    # django_peeringdb only knows sqlite/mysql unique-violation messages;
+    # PostgreSQL and CockroachDB share this format
+    from django_peeringdb.client_adaptor import backend as _pdb_backend
+
+    _pg_unique = {"unique": [(r"Key \((?P<field_name>\w+)\)=", 0)]}
+    _pdb_backend.Backend.ERROR_PATTERNS.setdefault("postgresql", _pg_unique)
+    _pdb_backend.Backend.ERROR_PATTERNS.setdefault("cockroachdb", _pg_unique)
+
 # WAL mode lets readers proceed while a sync holds the write transaction
-# ("database is locked" errors otherwise)
-try:
-    with connection.cursor() as cur:
-        cur.execute("PRAGMA journal_mode=WAL")
-        cur.execute("PRAGMA synchronous=NORMAL")
-except Exception:
-    log.exception("failed to set sqlite pragmas")
+# ("database is locked" errors otherwise); PostgreSQL has MVCC and needs none
+if DB_CONFIG["engine"] == "sqlite3":
+    try:
+        with connection.cursor() as cur:
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA synchronous=NORMAL")
+    except Exception:
+        log.exception("failed to set sqlite pragmas")
 
 
 class SyncManager:

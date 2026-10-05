@@ -10,7 +10,18 @@ services:
       - "127.0.0.1:8080:8080"
     environment:
       - PEERINGDB_API_KEY=${PEERINGDB_API_KEY:-}
-      # - SYNC_INTERVAL=21600        # seconds between syncs (default 6h)
+      # Database (default: SQLite at /data/peeringdb.sqlite3). PostgreSQL 14+ or CockroachDB:
+      # - DATABASE_URL=postgresql://user:password@db-host:5432/peeringdb
+      # - DATABASE_URL=cockroachdb://user:password@db-host:26257/peeringdb?sslmode=verify-full
+      # ...or set the pieces individually instead of DATABASE_URL:
+      # - DATABASE_ENGINE=sqlite3  # sqlite3, postgresql or cockroachdb
+      # - DATABASE_NAME=peeringdb
+      # - DATABASE_HOST=db-host
+      # - DATABASE_PORT=5432
+      # - DATABASE_USER=${DATABASE_USERNAME:-}
+      # - DATABASE_PASSWORD=${DATABASE_PASSWORD:-}
+      # - DATABASE_SSLMODE=require
+      # - SYNC_INTERVAL=21600       # seconds between syncs (default 6h)
       # - CHANGE_CHECK_INTERVAL=600  # probe for remote changes every N sec (0=off)
       # - CHANGE_CHECK_RESOURCES=    # limit probes to these tags (empty=all)
       # - PDB_SYNC_ONLY=org,net      # limit synced resources (testing)
