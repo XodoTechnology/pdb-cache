@@ -3,3 +3,5 @@ django-peeringdb==3.7.0
 Django==5.2.17
 Flask==3.1.3
 gunicorn==26.2.0
+psycopg[binary]==3.2.9
+django-cockroachdb==5.2.2
